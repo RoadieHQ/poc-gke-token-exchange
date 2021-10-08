@@ -1,0 +1,31 @@
+{
+  "name": "poc-gke",
+  "version": "1.0.0",
+  "description": "Poc for obtaining tokens from gcp with aws creds",
+  "engines": {
+    "node": "12 || 14"
+  },
+  "main": "index.js",
+  "scripts": {
+    "start": "node index.js",
+    "test": "echo \"Error: no test specified\" && exit 1"
+  },
+  "dependencies": {
+    "@aws-crypto/sha256-js": "^1.2.1",
+    "@aws-sdk/client-lambda": "3.29.0",
+    "@aws-sdk/client-sts": "3.29.0",
+    "@aws-sdk/middleware-signing": "3.29.0",
+    "@aws-sdk/signature-v4": "^3.36.0",
+    "@aws-sdk/types": "3.29.0",
+    "aws-sdk": "^2.1003.0",
+    "esm": "^3.2.25",
+    "fs": "*",
+    "moment": "^2.29.1",
+    "node-fetch": "^3.0.0",
+    "strftime": "^0.10.0",
+    "url": "^0.11.0"
+  },
+  "author": "",
+  "license": "ISC",
+  "type": "module"
+}
