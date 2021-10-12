@@ -1,10 +1,15 @@
 import fs from "fs";
+import yargs from "yargs";
 import AWS from 'aws-sdk';
 import fetch from 'node-fetch';
+import { hideBin } from 'yargs/helpers';
+import logger from './logger.js';
+
+const DEFAULT_REGION = 'eu-west-1';
 
 async function createRequest(){
-  const url = 'https://sts.eu-west-1.amazonaws.com';
-  const region = 'eu-west-1';
+  const region = DEFAULT_REGION;
+  const url = `https://sts.${region}.amazonaws.com`;
   const endpoint = new AWS.Endpoint(url);
   const request = new AWS.HttpRequest(endpoint, region);
 
@@ -28,7 +33,7 @@ const storeData = (data, path) => {
   }
 };
 
-const generateTokenPayload = (data) => {
+const generateTokenPayload = (data, args) => {
   const headers = [
     {
       "key":"Authorization",
@@ -44,7 +49,7 @@ const generateTokenPayload = (data) => {
     },
     {
       "key":"x-goog-cloud-target-resource",
-      "value":"//iam.googleapis.com/projects/163556754530/locations/global/workloadIdentityPools/roadiehq-aws-accounts/providers/roadiehq-dev"
+      "value":`//iam.googleapis.com/projects/${args.accountNumber}/locations/global/workloadIdentityPools/${args.providerPool}/providers/${args.providerId}`
     },
     {
       "key":"x-amz-security-token",
@@ -62,7 +67,7 @@ const generateTokenPayload = (data) => {
 
 const generatePayload = (token) => {
   return JSON.stringify({
-    audience : "//iam.googleapis.com/projects/163556754530/locations/global/workloadIdentityPools/roadiehq-aws-accounts/providers/roadiehq-dev",
+    audience : `//iam.googleapis.com/projects/${args.accountNumber}/locations/global/workloadIdentityPools/${args.providerPool}/providers/${args.providerId}`,
     grantType : "urn:ietf:params:oauth:grant-type:token-exchange",
     requestedTokenType : "urn:ietf:params:oauth:token-type:access_token",
     scope : "https://www.googleapis.com/auth/cloud-platform",
@@ -71,7 +76,7 @@ const generatePayload = (token) => {
   })
 }
 
-const getAccessToken = async (data) => {
+const getAccessToken = async (data, args) => {
 //   STS_TOKEN=$(curl -0 -X POST https://sts.googleapis.com/v1/token \
 //     -H 'Content-Type: text/json; charset=utf-8' \
 //     -d @- <<EOF | jq -r .access_token
@@ -85,10 +90,10 @@ const getAccessToken = async (data) => {
 //     }
 // EOF)
 
-  const serializedTokenPayload = generateTokenPayload(data);
-  console.log(encodeURIComponent(JSON.stringify(serializedTokenPayload)))
-  const payload = generatePayload(encodeURIComponent(serializedTokenPayload));
-  console.log(JSON.stringify(JSON.parse(payload),null,2));
+  const serializedTokenPayload = generateTokenPayload(data, args);
+  // console.log(encodeURIComponent(JSON.stringify(serializedTokenPayload)))
+  const payload = generatePayload(encodeURIComponent(serializedTokenPayload), args);
+  // console.log(JSON.stringify(JSON.parse(payload),null,2));
   return await fetch("https://sts.googleapis.com/v1/token", {
     method: "POST", 
     body: payload,
@@ -98,7 +103,7 @@ const getAccessToken = async (data) => {
   }).then(res => {
     return res.json()
   }).then((res) => {
-    console.log(JSON.stringify(res))
+    // console.log(JSON.stringify(res))
     return res.access_token
   }
   ).catch((err) => {
@@ -106,8 +111,7 @@ const getAccessToken = async (data) => {
   });
 }
 
-const getOauthToken = async (token)=> {
-  console.log(token);
+const getOauthToken = async (token, args)=> {
 //   ACCESS_TOKEN=$(curl -0 -X POST https://iamcredentials.googleapis.co`m/v1/projects/-/serviceAccounts/SERVICE_ACCOUNT_EMAIL:generateAccessToken \
 //     -H "Content-Type: text/json; charset=utf-8" \
 //     -H "Authorization: Bearer $STS_TOKEN" \
@@ -118,7 +122,8 @@ const getOauthToken = async (token)=> {
 // EOF)
 // echo $ACCESS_TOKEN
 
-  return await fetch("https://iamcredentials.googleapis.com/v1/projects/-/serviceAccounts/nic-test%40roadie-dev-283705.iam.gserviceaccount.com:generateAccessToken", {
+const email = args.serviceAccountEmail.replace('@', '%40');
+return await fetch(`https://iamcredentials.googleapis.com/v1/projects/-/serviceAccounts/${email}:generateAccessToken`, {
     method: "POST",
     headers: {
       'Content-Type': 'text/json; charset=utf-8',
@@ -128,15 +133,15 @@ const getOauthToken = async (token)=> {
   }).then(res => {
     return res.json()
   }).then( (res) => {
-    console.log(JSON.stringify(res))
+    // console.log(JSON.stringify(res))
     return res.accessToken
   }).catch((err) => {
     console.log(`There was an error ${err}`)
   });
 }
 
-const runSts = async () => {
-  const signedRequest = await createRequest();
+const runSts = async (args) => {
+  const signedRequest = await createRequest(args.region);
   const transformed = {
     url: `https://${signedRequest.endpoint.hostname}/?${signedRequest.search()}`,
     headers: signedRequest.headers,
@@ -144,9 +149,43 @@ const runSts = async () => {
   };
   storeData(transformed, "./request.json");
 
-  const accessToken = await getAccessToken(transformed);
-  const oauth = await getOauthToken(accessToken);
-  console.log(oauth)
+  const accessToken = await getAccessToken(transformed, args);
+  const oauth = await getOauthToken(accessToken, args);
+  console.log(`This is your oauth token: ${oauth}`)
 };
 
-runSts();
+const HELP = "This is a script to exchange AWS tokens for GCP tokens"
+
+const getArgs = (argv) => {
+  let args = {}
+  
+  if(!argv.providerPool){
+    logger.error(`${HELP}\nYou must set --provider-pool=[your pool]`);
+    process.exit(2);
+  }
+  args.providerPool = argv.providerPool;
+
+  if(!argv.serviceAccountEmail){
+    logger.error(`${HELP}\nYou must set --service-account-email=[your service account email]`)
+    process.exit(2);
+  }
+  args.serviceAccountEmail = argv.serviceAccountEmail;
+
+  if(!argv.providerId){
+    logger.error(`${HELP}\nYou must set --provider-id=[your pool id]`)
+    process.exit(2);
+  }
+  args.providerId = argv.providerId;
+
+  if(!argv.accountNumber){
+    logger.error(`${HELP}\nYou must set --account-number=[your account number]`)
+    process.exit(2);
+  }
+  args.accountNumber = argv.accountNumber;
+  args.region = argv.region || DEFAULT_REGION;
+  return args;
+}
+
+const argv = yargs(hideBin(process.argv)).argv
+const args = getArgs(argv);
+runSts(args);

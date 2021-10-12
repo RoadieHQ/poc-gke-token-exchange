@@ -2,7 +2,10 @@
 
 ```
 npm install
-node src/index.js
+node src/index.js --provider-pool='<your-pool>' \
+                  --provider-id='<your-provider-id>' \
+                  --service-account-email='<your-service-account-email>' \
+                  --account-number='<your-account-number>'
 ```
 
 ```
